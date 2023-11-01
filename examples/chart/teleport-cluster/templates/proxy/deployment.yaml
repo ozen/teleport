@@ -108,7 +108,7 @@ spec:
             - teleport
             - wait
             - no-resolve
-            - '{{ include "teleport-cluster.auth.previousVersionServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local'
+            - '{{ include "teleport-cluster.auth.previousVersionServiceName" . }}.{{ .Release.Namespace }}.svc.{{ if .Values.kubeClusterDomain }}{{ .Values.kubeClusterDomain }}{{ else }}cluster.local{{ end }}'
 {{- if $proxy.securityContext }}
           securityContext: {{- toYaml $proxy.securityContext | nindent 12 }}
 {{- end }}
