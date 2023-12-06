@@ -18,7 +18,7 @@ clusterName: ""
 # Name for this kubernetes cluster to be used by teleport users.
 kubeClusterName: ""
 
-# Domain of this kubernetes cluster to be used to construct service DNS names.
+# Domain of this kubernetes cluster to be used to construct service DNS names. Defaults to cluster.local.
 kubeClusterDomain: ""
 
 ##################################################
