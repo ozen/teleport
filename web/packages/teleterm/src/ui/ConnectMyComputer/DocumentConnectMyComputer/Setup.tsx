@@ -1,18 +1,20 @@
-/*
-Copyright 2023 Gravitational, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+/**
+ * Teleport
+ * Copyright (C) 2023  Gravitational, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
@@ -212,6 +214,7 @@ function AccessError(props: { access: ConnectMyComputerAccessNoAccess }) {
 function AgentSetup() {
   const logger = useLogger('AgentSetup');
   const ctx = useAppContext();
+  const { mainProcessClient, notificationsService } = ctx;
   const { rootClusterUri } = useWorkspaceContext();
   const {
     startAgent,
@@ -222,7 +225,7 @@ function AgentSetup() {
     agentProcessState,
   } = useConnectMyComputerContext();
   const { requestResourcesRefresh } = useResourcesContext();
-  const cluster = ctx.clustersService.findCluster(rootClusterUri);
+  const rootCluster = ctx.clustersService.findCluster(rootClusterUri);
   const nodeToken = useRef<string>();
 
   const [createRoleAttempt, runCreateRoleAttempt, setCreateRoleAttempt] =
@@ -262,10 +265,10 @@ function AgentSetup() {
   ] = useAsync(
     useCallback(async () => {
       const { token } = await retryWithRelogin(ctx, rootClusterUri, () =>
-        ctx.connectMyComputerService.createAgentConfigFile(cluster)
+        ctx.connectMyComputerService.createAgentConfigFile(rootCluster)
       );
       nodeToken.current = token;
-    }, [cluster, ctx, rootClusterUri])
+    }, [rootCluster, ctx, rootClusterUri])
   );
   const [joinClusterAttempt, runJoinClusterAttempt, setJoinClusterAttempt] =
     useAsync(
@@ -284,7 +287,7 @@ function AgentSetup() {
 
         try {
           await ctx.connectMyComputerService.deleteToken(
-            cluster.uri,
+            rootCluster.uri,
             nodeToken.current
           );
         } catch (error) {
@@ -298,7 +301,7 @@ function AgentSetup() {
       }, [
         startAgent,
         ctx.connectMyComputerService,
-        cluster.uri,
+        rootCluster.uri,
         requestResourcesRefresh,
         logger,
       ])
@@ -367,7 +370,7 @@ function AgentSetup() {
     },
   ];
 
-  const runSteps = useCallback(async () => {
+  const runSteps = async () => {
     function withEventOnFailure(
       fn: () => Promise<[void, Error]>,
       failedStep: string
@@ -376,7 +379,7 @@ function AgentSetup() {
         const result = await fn();
         const [, error] = result;
         if (error) {
-          ctx.usageService.captureConnectMyComputerSetup(cluster.uri, {
+          ctx.usageService.captureConnectMyComputerSetup(rootCluster.uri, {
             success: false,
             failedStep,
           });
@@ -408,26 +411,14 @@ function AgentSetup() {
         return;
       }
     }
-    ctx.usageService.captureConnectMyComputerSetup(cluster.uri, {
+    ctx.usageService.captureConnectMyComputerSetup(rootCluster.uri, {
       success: true,
     });
     // Wait before navigating away from the document, so the user has time
     // to notice that all four steps have completed.
     await wait(750);
     markAgentAsConfigured();
-  }, [
-    setCreateRoleAttempt,
-    setDownloadAgentAttempt,
-    setGenerateConfigFileAttempt,
-    setJoinClusterAttempt,
-    runCreateRoleAttempt,
-    runDownloadAgentAttempt,
-    runGenerateConfigFileAttempt,
-    runJoinClusterAttempt,
-    markAgentAsConfigured,
-    ctx.usageService,
-    cluster.uri,
-  ]);
+  };
 
   useEffect(() => {
     if (
@@ -440,13 +431,31 @@ function AgentSetup() {
     ) {
       runSteps();
     }
-  }, [
-    downloadAgentAttempt,
-    generateConfigFileAttempt,
-    joinClusterAttempt,
-    createRoleAttempt,
-    runSteps,
-  ]);
+  }, []);
+
+  const retryRunSteps = async () => {
+    try {
+      // This will remove the binary but only if no other agents are running.
+      //
+      // Removing the binary is useful in situations where the download got corrupted or the OS
+      // decided to ban the binary from being executed for some reason. In those cases,
+      // redownloading the binary might resolve the problem.
+      //
+      // If other agents are running, then we at least know that there's probably no problems with
+      // the binary itself, in which case we can simply ignore the fact that it wasn't removed and
+      // carry on.
+      await mainProcessClient.tryRemoveConnectMyComputerAgentBinary();
+    } catch (error) {
+      const { agentBinaryPath } = mainProcessClient.getRuntimeSettings();
+      notificationsService.notifyError({
+        title: 'Could not remove the agent binary',
+        description: `Please try removing the binary manually to continue. The binary is at ${agentBinaryPath}. The error message was: ${error.message}`,
+      });
+      return;
+    }
+
+    await runSteps();
+  };
 
   const hasSetupFailed = steps.some(s => s.attempt.status === 'error');
   const { clusterName, hostname } = useAgentProperties();
@@ -468,7 +477,7 @@ function AgentSetup() {
         }))}
       />
       {hasSetupFailed && (
-        <ButtonPrimary alignSelf="center" onClick={runSteps}>
+        <ButtonPrimary alignSelf="center" onClick={retryRunSteps}>
           Retry
         </ButtonPrimary>
       )}

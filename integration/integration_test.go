@@ -1,18 +1,20 @@
 /*
-Copyright 2016-2019 Gravitational, Inc.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+ * Teleport
+ * Copyright (C) 2023  Gravitational, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 
 package integration
 
@@ -67,6 +69,7 @@ import (
 	"github.com/gravitational/teleport/api/metadata"
 	tracessh "github.com/gravitational/teleport/api/observability/tracing/ssh"
 	"github.com/gravitational/teleport/api/profile"
+	apihelpers "github.com/gravitational/teleport/api/testhelpers"
 	"github.com/gravitational/teleport/api/types"
 	apievents "github.com/gravitational/teleport/api/types/events"
 	apiutils "github.com/gravitational/teleport/api/utils"
@@ -1494,7 +1497,7 @@ func testIPPropagation(t *testing.T, suite *integrationTestSuite) {
 
 			conf.DataDir = t.TempDir()
 			conf.SetToken("token")
-			conf.UploadEventsC = i.UploadEventsC
+			conf.Testing.UploadEventsC = i.UploadEventsC
 			conf.SetAuthServerAddress(*utils.MustParseAddr(net.JoinHostPort(i.Hostname, helpers.PortStr(t, i.Web))))
 			conf.HostUUID = name
 			conf.Hostname = name
@@ -2184,7 +2187,7 @@ func testDisconnectScenarios(t *testing.T, suite *integrationTestSuite) {
 				ss, err := waitForSessionToBeEstablished(timeoutCtx, defaults.Namespace, site)
 				require.NoError(t, err)
 				require.Len(t, ss, 1)
-				require.Nil(t, teleport.StopAuth(false))
+				require.NoError(t, teleport.StopAuth(false))
 			},
 		},
 	}
@@ -2524,9 +2527,9 @@ func twoClustersTunnel(t *testing.T, suite *integrationTestSuite, now time.Time,
 	require.NoError(t, err)
 
 	// Wait for both cluster to see each other via reverse tunnels.
-	require.Eventually(t, helpers.WaitForClusters(a.Tunnel, 2), 10*time.Second, 1*time.Second,
+	require.Eventually(t, helpers.WaitForClusters(a.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
-	require.Eventually(t, helpers.WaitForClusters(b.Tunnel, 2), 10*time.Second, 1*time.Second,
+	require.Eventually(t, helpers.WaitForClusters(b.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
 
 	var (
@@ -2671,7 +2674,7 @@ func testTwoClustersProxy(t *testing.T, suite *integrationTestSuite) {
 
 	// httpproxy doesn't allow proxying when the target is localhost, so use
 	// this address instead.
-	addr, err := helpers.GetLocalIP()
+	addr, err := apihelpers.GetLocalIP()
 	require.NoError(t, err)
 	a := suite.newNamedTeleportInstance(t, "site-A",
 		WithNodeName(addr),
@@ -2889,8 +2892,6 @@ func testMapRoles(t *testing.T, suite *integrationTestSuite) {
 	// Wait for both cluster to see each other via reverse tunnels.
 	require.Eventually(t, helpers.WaitForClusters(main.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
-	require.Eventually(t, helpers.WaitForClusters(aux.Tunnel, 1), 10*time.Second, 1*time.Second,
-		"Two clusters do not see each other: tunnels are not working.")
 
 	// Make sure that GetNodes returns nodes in the remote site. This makes
 	// sure identity aware GetNodes works for remote clusters. Testing of the
@@ -3096,7 +3097,7 @@ func testMultiplexingTrustedClusters(t *testing.T, suite *integrationTestSuite) 
 	trustedClusters(t, suite, trustedClusterTest{multiplex: true})
 }
 
-func standardPortsOrMuxSetup(t *testing.T, mux bool, fds *[]servicecfg.FileDescriptor) *helpers.InstanceListeners {
+func standardPortsOrMuxSetup(t *testing.T, mux bool, fds *[]*servicecfg.FileDescriptor) *helpers.InstanceListeners {
 	if mux {
 		return helpers.WebReverseTunnelMuxPortSetup(t, fds)
 	}
@@ -3224,8 +3225,6 @@ func trustedClusters(t *testing.T, suite *integrationTestSuite, test trustedClus
 
 	// Wait for both cluster to see each other via reverse tunnels.
 	require.Eventually(t, helpers.WaitForClusters(main.Tunnel, 1), 10*time.Second, 1*time.Second,
-		"Two clusters do not see each other: tunnels are not working.")
-	require.Eventually(t, helpers.WaitForClusters(aux.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
 
 	cmd := []string{"echo", "hello world"}
@@ -3722,8 +3721,6 @@ func testTrustedTunnelNode(t *testing.T, suite *integrationTestSuite) {
 	// Wait for both cluster to see each other via reverse tunnels.
 	require.Eventually(t, helpers.WaitForClusters(main.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
-	require.Eventually(t, helpers.WaitForClusters(aux.Tunnel, 1), 10*time.Second, 1*time.Second,
-		"Two clusters do not see each other: tunnels are not working.")
 
 	// Wait for both nodes to show up before attempting to dial to them.
 	err = helpers.WaitForNodeCount(ctx, main, clusterAux, 2)
@@ -3890,8 +3887,6 @@ func testTrustedClusterAgentless(t *testing.T, suite *integrationTestSuite) {
 
 	// Wait for both cluster to see each other via reverse tunnels.
 	require.Eventually(t, helpers.WaitForClusters(main.Tunnel, 1), 10*time.Second, 1*time.Second,
-		"Two clusters do not see each other: tunnels are not working.")
-	require.Eventually(t, helpers.WaitForClusters(leaf.Tunnel, 1), 10*time.Second, 1*time.Second,
 		"Two clusters do not see each other: tunnels are not working.")
 
 	// create agentless node in leaf cluster
@@ -4076,7 +4071,7 @@ func testDiscovery(t *testing.T, suite *integrationTestSuite) {
 
 	// create load balancer for main cluster proxies
 	frontend := *utils.MustParseAddr(net.JoinHostPort(Loopback, "0"))
-	lb, err := utils.NewLoadBalancer(ctx, frontend)
+	lb, err := utils.NewRandomLoadBalancer(ctx, frontend)
 	require.NoError(t, err)
 	require.NoError(t, lb.Listen())
 	go lb.Serve()
@@ -4857,7 +4852,7 @@ func testAuditOff(t *testing.T, suite *integrationTestSuite) {
 
 	// should have no sessions in it to start with
 	sessions, _ := site.GetActiveSessionTrackers(ctx)
-	require.Len(t, sessions, 0)
+	require.Empty(t, sessions)
 
 	beforeSession := time.Now()
 
@@ -5685,8 +5680,8 @@ func (s *integrationTestSuite) rotationConfig(disableWebService bool) *servicecf
 	tconf.Proxy.DisableDatabaseProxy = true
 	tconf.Proxy.DisableALPNSNIListener = true
 	tconf.PollingPeriod = time.Second
-	tconf.ClientTimeout = time.Second
-	tconf.ShutdownTimeout = 2 * tconf.ClientTimeout
+	tconf.Testing.ClientTimeout = time.Second
+	tconf.Testing.ShutdownTimeout = 2 * tconf.Testing.ClientTimeout
 	tconf.MaxRetryPeriod = time.Second
 	return tconf
 }
@@ -6890,7 +6885,7 @@ func testSessionStartContainsAccessRequest(t *testing.T, suite *integrationTestS
 		if event.Type != types.OpInit {
 			t.Fatalf("Unexpected event type.")
 		}
-		require.Equal(t, event.Type, types.OpInit)
+		require.Equal(t, types.OpInit, event.Type)
 	case <-watcher.Done():
 		t.Fatal(watcher.Error())
 	}
@@ -6933,14 +6928,14 @@ func testSessionStartContainsAccessRequest(t *testing.T, suite *integrationTestS
 	// Get session start event
 	sessionStart, err := findEventInLog(main, events.SessionStartEvent)
 	require.NoError(t, err)
-	require.Equal(t, sessionStart.GetCode(), events.SessionStartCode)
-	require.Equal(t, sessionStart.HasField(accessRequestsKey), true)
+	require.Equal(t, events.SessionStartCode, sessionStart.GetCode())
+	require.True(t, sessionStart.HasField(accessRequestsKey))
 
 	val, found := sessionStart[accessRequestsKey]
-	require.Equal(t, found, true)
+	require.True(t, found)
 
 	result := strings.Contains(fmt.Sprintf("%v", val), accessRequestID)
-	require.Equal(t, result, true)
+	require.True(t, result)
 }
 
 func WaitForResource(t *testing.T, watcher types.Watcher, kind, name string) {
@@ -7384,7 +7379,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 
 	api := teleport.GetSiteAPI(helpers.Site)
 	uploadStream, err := api.CreateAuditStream(ctx, sessionID)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	generatedSession := eventstest.GenerateTestSession(eventstest.SessionParams{
 		PrintEvents: 100,
@@ -7398,7 +7393,7 @@ func testSessionStreaming(t *testing.T, suite *integrationTestSuite) {
 	}
 
 	err = uploadStream.Complete(ctx)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	start := time.Now()
 
 	// retry in case of error
@@ -7419,9 +7414,9 @@ outer:
 
 				receivedSession = append(receivedSession, event)
 			case <-ctx.Done():
-				require.Nil(t, ctx.Err())
+				require.NoError(t, ctx.Err())
 			case err := <-e:
-				require.Nil(t, err)
+				require.NoError(t, err)
 			case <-time.After(time.Minute * 5):
 				t.FailNow()
 			}
@@ -7547,7 +7542,6 @@ func createTrustedClusterPair(t *testing.T, suite *integrationTestSuite, extraSe
 	}
 
 	require.Eventually(t, helpers.WaitForClusters(root.Tunnel, 1), 10*time.Second, 1*time.Second)
-	require.Eventually(t, helpers.WaitForClusters(leaf.Tunnel, 1), 10*time.Second, 1*time.Second)
 
 	// Create client.
 	creds, err := helpers.GenerateUserCreds(helpers.UserCredsRequest{
@@ -7588,7 +7582,7 @@ func testListResourcesAcrossClusters(t *testing.T, suite *integrationTestSuite) 
 
 			conf.DataDir = t.TempDir()
 			conf.SetToken("token")
-			conf.UploadEventsC = i.UploadEventsC
+			conf.Testing.UploadEventsC = i.UploadEventsC
 			conf.SetAuthServerAddress(*utils.MustParseAddr(net.JoinHostPort(i.Hostname, helpers.PortStr(t, i.Web))))
 			conf.HostUUID = name
 			conf.Hostname = name
